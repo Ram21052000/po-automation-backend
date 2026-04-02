@@ -3,6 +3,7 @@ package com.poautomation.controller;
 import com.poautomation.entity.PurchaseOrder;
 import com.poautomation.service.CurrencyService;
 import com.poautomation.service.PurchaseOrderService;
+import com.poautomation.service.AnalyticsService;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.core.io.InputStreamResource;
 import org.springframework.http.HttpHeaders;
@@ -27,6 +28,9 @@ public class PurchaseOrderController {
     @Autowired
     private CurrencyService currencyService;
 
+    @Autowired
+    private AnalyticsService analyticsService;
+
     @PostMapping("/upload")
     public PurchaseOrder upload(@RequestParam("file") MultipartFile file) {
         return service.upload(file);
@@ -36,10 +40,13 @@ public class PurchaseOrderController {
     public List<PurchaseOrder> list(
             @RequestParam(required = false) LocalDate startDate,
             @RequestParam(required = false) LocalDate endDate,
+            @RequestParam(required = false) String country,
             @RequestParam(required = false) String supplier,
+            @RequestParam(required = false) String brand,
             @RequestParam(required = false) String buyer,
-            @RequestParam(required = false) String category) {
-        return service.getAll(startDate, endDate, supplier, buyer, category);
+            @RequestParam(required = false) String category,
+            @RequestParam(required = false) String factoryName) {
+        return service.getAll(startDate, endDate, country, supplier, buyer, brand, category, factoryName);
     }
 
     @GetMapping("/kpis")
@@ -60,6 +67,11 @@ public class PurchaseOrderController {
     @GetMapping("/currency/usd-to-gbp")
     public Map<String, Object> usdToGbp() {
         return currencyService.getUsdToGbpRate();
+    }
+
+    @GetMapping("/currency/gbp-to-usd-adjusted")
+    public Map<String, Object> gbpToUsdAdjusted() {
+        return currencyService.getGbpToUsdAdjusted();
     }
 
     @GetMapping("/export")
@@ -83,5 +95,46 @@ public class PurchaseOrderController {
     @GetMapping("/health")
     public Map<String, String> health() {
         return Map.of("status", "UP");
+    }
+
+    // Analytics endpoints
+    @GetMapping("/analytics/country")
+    public Map<String, Object> countryTotals() {
+        return analyticsService.countryWiseBusiness();
+    }
+
+    @GetMapping("/analytics/time")
+    public Map<String, Object> timeTotals(@RequestParam(defaultValue = "month") String granularity) {
+        return analyticsService.timeSummaries(granularity);
+    }
+
+    @GetMapping("/analytics/brand-links")
+    public Map<String, Object> brandLinks() {
+        return analyticsService.brandLinks();
+    }
+
+    @GetMapping("/analytics/supplier-links")
+    public Map<String, Object> supplierLinks() {
+        return analyticsService.supplierLinks();
+    }
+
+    @GetMapping("/analytics/factory-links")
+    public Map<String, Object> factoryLinks() {
+        return analyticsService.factoryLinks();
+    }
+
+    @GetMapping("/analytics/overall-totals-usd")
+    public Map<String, Object> overallTotals() {
+        return analyticsService.overallTotals();
+    }
+
+    @GetMapping("/analytics/suppliers")
+    public List<Map<String, Object>> supplierDetails() {
+        return analyticsService.supplierDetails();
+    }
+
+    @GetMapping("/analytics/factories")
+    public List<Map<String, Object>> factoryDetails() {
+        return analyticsService.factoryDetails();
     }
 }

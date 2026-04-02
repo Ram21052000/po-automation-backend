@@ -55,4 +55,30 @@ public class CurrencyService {
                 "asOf", cacheTime == null ? "N/A" : cacheTime.toString()
         );
     }
+
+    // Adjusted GBP->USD rate as per spec: live rate minus 0.02 (two cents)
+    public BigDecimal getGbpToUsdAdjustedRate() {
+        // If we have USD->GBP, invert to get GBP->USD
+        BigDecimal usdToGbp = (BigDecimal) getUsdToGbpRate().get("rate");
+        if (usdToGbp == null || usdToGbp.compareTo(BigDecimal.ZERO) == 0) {
+            usdToGbp = new BigDecimal("0.78");
+        }
+        BigDecimal gbpToUsd = BigDecimal.ONE.divide(usdToGbp, 6, java.math.RoundingMode.HALF_UP);
+        BigDecimal adjusted = gbpToUsd.subtract(new BigDecimal("0.02"));
+        return adjusted.max(BigDecimal.ZERO);
+    }
+
+    public Map<String, Object> getGbpToUsdAdjusted() {
+        BigDecimal rate = getGbpToUsdAdjustedRate();
+        return Map.of("base", "GBP", "target", "USD", "rate", rate);
+    }
+
+    public BigDecimal getUsdToGbpAdjustedRate() {
+        BigDecimal gbpToUsd = getGbpToUsdAdjustedRate();
+        if (gbpToUsd == null || gbpToUsd.compareTo(BigDecimal.ZERO) == 0) {
+            return new BigDecimal("0.78");
+        }
+        // USD->GBP adjusted is the inverse of GBP->USD adjusted.
+        return BigDecimal.ONE.divide(gbpToUsd, 6, java.math.RoundingMode.HALF_UP);
+    }
 }

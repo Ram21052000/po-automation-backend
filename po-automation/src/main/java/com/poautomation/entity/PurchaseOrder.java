@@ -33,6 +33,11 @@ public class PurchaseOrder {
     private String portOfLoading;
     private String sampleApprovedStatus;
 
+    // Supplier/Factory details
+    private String supplierLocation;
+    private String factoryName;
+    private String factoryLocation;
+
     // Excel template "UK PO RECD DATE"
     private LocalDate dateOrderPlaced;
     private LocalDate revisedExFactoryDate;
@@ -224,6 +229,30 @@ public class PurchaseOrder {
 
     public void setSampleApprovedStatus(String sampleApprovedStatus) {
         this.sampleApprovedStatus = sampleApprovedStatus;
+    }
+
+    public String getSupplierLocation() {
+        return supplierLocation;
+    }
+
+    public void setSupplierLocation(String supplierLocation) {
+        this.supplierLocation = supplierLocation;
+    }
+
+    public String getFactoryName() {
+        return factoryName;
+    }
+
+    public void setFactoryName(String factoryName) {
+        this.factoryName = factoryName;
+    }
+
+    public String getFactoryLocation() {
+        return factoryLocation;
+    }
+
+    public void setFactoryLocation(String factoryLocation) {
+        this.factoryLocation = factoryLocation;
     }
 
     public LocalDate getDateOrderPlaced() {

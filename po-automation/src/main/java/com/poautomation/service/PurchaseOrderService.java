@@ -1,7 +1,9 @@
 package com.poautomation.service;
 
 import com.poautomation.entity.PurchaseOrder;
+import com.poautomation.entity.PurchaseOrderLine;
 import com.poautomation.repository.PurchaseOrderRepository;
+import com.poautomation.service.CurrencyService;
 import com.poautomation.util.PdfParserUtil;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.data.jpa.domain.Specification;
@@ -36,6 +38,9 @@ public class PurchaseOrderService {
     @Autowired
     private PurchaseOrderRepository repo;
 
+    @Autowired
+    private CurrencyService currencyService;
+
     public PurchaseOrder upload(MultipartFile file) {
         try {
             PurchaseOrder po = parser.parse(file);
@@ -45,7 +50,14 @@ public class PurchaseOrderService {
         }
     }
 
-    public List<PurchaseOrder> getAll(LocalDate startDate, LocalDate endDate, String supplier, String buyer, String category) {
+    public List<PurchaseOrder> getAll(LocalDate startDate,
+                                      LocalDate endDate,
+                                      String country,
+                                      String supplier,
+                                      String buyer,
+                                      String brand,
+                                      String category,
+                                      String factoryName) {
         Specification<PurchaseOrder> spec = Specification.where(null);
 
         if (startDate != null) {
@@ -54,14 +66,23 @@ public class PurchaseOrderService {
         if (endDate != null) {
             spec = spec.and((root, query, cb) -> cb.lessThanOrEqualTo(root.get("dateOrderPlaced"), endDate));
         }
+        if (hasText(country)) {
+            spec = spec.and((root, query, cb) -> cb.equal(cb.lower(root.get("country")), country.toLowerCase()));
+        }
         if (hasText(supplier)) {
             spec = spec.and((root, query, cb) -> cb.equal(cb.lower(root.get("supplier")), supplier.toLowerCase()));
         }
         if (hasText(buyer)) {
             spec = spec.and((root, query, cb) -> cb.equal(cb.lower(root.get("buyer")), buyer.toLowerCase()));
         }
+        if (hasText(brand)) {
+            spec = spec.and((root, query, cb) -> cb.equal(cb.lower(root.get("brand")), brand.toLowerCase()));
+        }
         if (hasText(category)) {
             spec = spec.and((root, query, cb) -> cb.equal(cb.lower(root.get("category")), category.toLowerCase()));
+        }
+        if (hasText(factoryName)) {
+            spec = spec.and((root, query, cb) -> cb.equal(cb.lower(root.get("factoryName")), factoryName.toLowerCase()));
         }
 
         return repo.findAll(spec);
@@ -134,6 +155,9 @@ public class PurchaseOrderService {
             numberStyle.setDataFormat(df.getFormat("#,##0.00"));
 
             int rowIdx = 1;
+            BigDecimal gbpToUsdAdjustedRate = currencyService.getGbpToUsdAdjustedRate();
+            BigDecimal usdToGbpAdjustedRate = currencyService.getUsdToGbpAdjustedRate();
+
             for (PurchaseOrder po : records) {
                 if (po.getLines() == null || po.getLines().isEmpty()) continue;
 
@@ -159,10 +183,26 @@ public class PurchaseOrderService {
                     setString(r, col++, po.getDateOrderPlaced() == null ? null : po.getDateOrderPlaced().toString());
                     setInt(r, col++, line.getTotalOrderQty());
 
-                    col = setMoney(r, col++, line.getUsdPricePerPc(), usdStyle);
-                    col = setMoney(r, col++, line.getGbpPricePerPc(), gbpStyle);
-                    col = setMoney(r, col++, line.getUsdTotalPoValue(), usdStyle);
-                    col = setMoney(r, col++, line.getGbpTotalPoValue(), gbpStyle);
+                    BigDecimal usdUnit = line.getUsdPricePerPc();
+                    BigDecimal gbpUnit = line.getGbpPricePerPc();
+                    if (usdUnit == null && gbpUnit != null) {
+                        usdUnit = gbpUnit.multiply(gbpToUsdAdjustedRate);
+                    } else if (gbpUnit == null && usdUnit != null) {
+                        gbpUnit = usdUnit.multiply(usdToGbpAdjustedRate);
+                    }
+
+                    BigDecimal usdTotal = line.getUsdTotalPoValue();
+                    BigDecimal gbpTotal = line.getGbpTotalPoValue();
+                    if (usdTotal == null && gbpTotal != null) {
+                        usdTotal = gbpTotal.multiply(gbpToUsdAdjustedRate);
+                    } else if (gbpTotal == null && usdTotal != null) {
+                        gbpTotal = usdTotal.multiply(usdToGbpAdjustedRate);
+                    }
+
+                    col = setMoney(r, col++, usdUnit, usdStyle);
+                    col = setMoney(r, col++, gbpUnit, gbpStyle);
+                    col = setMoney(r, col++, usdTotal, usdStyle);
+                    col = setMoney(r, col++, gbpTotal, gbpStyle);
 
                     setString(r, col++, po.getConfirmedExFactoryDate() == null ? null : po.getConfirmedExFactoryDate().toString());
                     setString(r, col++, po.getRevisedExFactoryDate() == null ? null : po.getRevisedExFactoryDate().toString());
@@ -202,19 +242,46 @@ public class PurchaseOrderService {
         return col + 1;
     }
 
+    @Transactional(readOnly = true)
     public Map<String, Object> getKpis() {
         List<PurchaseOrder> list = repo.findAll();
         int totalOrders = list.size();
-        int totalUnits = list.stream().map(PurchaseOrder::getTotalUnits).filter(v -> v != null).mapToInt(Integer::intValue).sum();
-        BigDecimal totalValue = list.stream()
-                .map(PurchaseOrder::getTotalAmount)
-                .filter(v -> v != null)
-                .reduce(BigDecimal.ZERO, BigDecimal::add);
+
+        BigDecimal gbpToUsdAdjustedRate = currencyService.getGbpToUsdAdjustedRate();
+        int totalUnits = 0;
+        BigDecimal totalUsdConverted = BigDecimal.ZERO;
+        BigDecimal totalUsdInput = BigDecimal.ZERO;
+        BigDecimal totalGbpInput = BigDecimal.ZERO;
+
+        for (PurchaseOrder po : list) {
+            if (po.getLines() == null || po.getLines().isEmpty()) continue;
+            for (PurchaseOrderLine line : po.getLines()) {
+                if (line.getTotalOrderQty() != null) totalUnits += line.getTotalOrderQty();
+
+                if (line.getUsdTotalPoValue() != null) {
+                    totalUsdInput = totalUsdInput.add(line.getUsdTotalPoValue());
+                }
+                if (line.getGbpTotalPoValue() != null) {
+                    totalGbpInput = totalGbpInput.add(line.getGbpTotalPoValue());
+                    totalUsdConverted = totalUsdConverted.add(line.getGbpTotalPoValue().multiply(gbpToUsdAdjustedRate));
+                }
+                if (line.getUsdTotalPoValue() != null) {
+                    totalUsdConverted = totalUsdConverted.add(line.getUsdTotalPoValue());
+                }
+            }
+        }
+
+        // Keep old dashboard key name `totalValue` aligned to the brief:
+        // final column should be total business converted into USD.
+        BigDecimal totalValue = totalUsdConverted;
         long delayed = list.stream().filter(po -> "DELAYED".equalsIgnoreCase(po.getDeliveryStatus())).count();
         return Map.of(
                 "totalOrders", totalOrders,
                 "totalUnits", totalUnits,
                 "totalValue", totalValue,
+                "totalUsdInput", totalUsdInput,
+                "totalGbpInput", totalGbpInput,
+                "totalUsdConverted", totalUsdConverted,
                 "delayedOrders", delayed
         );
     }

@@ -7,6 +7,7 @@ import org.springframework.stereotype.Component;
 import org.springframework.web.multipart.MultipartFile;
 
 import java.math.BigDecimal;
+import java.io.InputStream;
 import java.time.LocalDate;
 import java.time.format.DateTimeFormatter;
 import java.time.format.DateTimeParseException;
@@ -27,14 +28,18 @@ public class PdfParserUtil {
     };
 
     public PurchaseOrder parse(MultipartFile file) throws Exception {
+        return parse(file.getInputStream(), file.getOriginalFilename());
+    }
+
+    public PurchaseOrder parse(InputStream inputStream, String originalFilename) throws Exception {
         String text;
-        try (PDDocument doc = PDDocument.load(file.getInputStream())) {
+        try (PDDocument doc = PDDocument.load(inputStream)) {
             text = new PDFTextStripper().getText(doc);
         }
 
         List<String> errors = new ArrayList<>();
         PurchaseOrder po = new PurchaseOrder();
-        po.setSourceFileName(file.getOriginalFilename());
+        po.setSourceFileName(originalFilename);
         po.setRawTextExcerpt(text.substring(0, Math.min(1000, text.length())));
 
         po.setPoNumber(extractByKeys(text, "Purchase Order No", "PO Number", "PO No"));
@@ -53,6 +58,9 @@ public class PdfParserUtil {
 
         // Currency: infer from the "All Amounts in ..." line when present.
         po.setCurrency(detectCurrency(text, po.getConfirmedExFactoryDate()));
+
+        // Enrich supplier/factory locations
+        extractFactoryAndSupplierLocations(text, po);
 
         po.setLines(parseLines(text, errors, po.getCurrency()));
         if (po.getLines() != null) {
@@ -397,6 +405,79 @@ public class PdfParserUtil {
         if (upper.contains("BOOHOO.COM") || upper.contains("BOOHOO")) return "BOOHOO";
         if (upper.contains("COAST")) return "COAST";
         return extractByKeys(text, "Brand");
+    }
+
+    // Additional extraction helpers for factory and supplier locations.
+    private void extractFactoryAndSupplierLocations(String fullText, PurchaseOrder po) {
+        String normalized = fullText.replace("\r\n", "\n").replace('\r', '\n');
+        String[] lines = normalized.split("\n");
+
+        int idxSupplierRef = -1;
+        int idxFactoryName = -1;
+        int idxFactoryPost = -1;
+        int idxYourVat = -1;
+
+        for (int i = 0; i < lines.length; i++) {
+            String l = lines[i].trim().toLowerCase(Locale.ENGLISH);
+            if (l.startsWith("supplier reference") && idxSupplierRef < 0) idxSupplierRef = i;
+            if (l.startsWith("factory name") && idxFactoryName < 0) idxFactoryName = i;
+            if ((l.startsWith("factory post code") || l.startsWith("factory post")) && idxFactoryPost < 0) idxFactoryPost = i;
+            if (l.startsWith("your vat number") && idxYourVat < 0) idxYourVat = i;
+        }
+
+        if (idxFactoryName >= 0) {
+            if (blank(po.getFactoryName())) {
+                po.setFactoryName(safeNextNonEmpty(lines, idxFactoryName + 1));
+            }
+        }
+
+        // Supplier location: between "Supplier Reference" and "Factory Name"
+        if (idxSupplierRef >= 0 && idxFactoryName > idxSupplierRef) {
+            String loc = joinWindow(lines, idxSupplierRef + 1, idxFactoryName - 1).replaceAll("\\s{2,}", " ").trim();
+            if (blank(po.getSupplierLocation())) {
+                po.setSupplierLocation(loc);
+            }
+        }
+
+        // Factory location: from after "Factory Name" until "Factory Post Code" (or "Your VAT Number")
+        if (idxFactoryName >= 0) {
+            int end = idxFactoryPost >= 0 ? idxFactoryPost + 1 : (idxYourVat >= 0 ? idxYourVat - 1 : Math.min(lines.length - 1, idxFactoryName + 10));
+            String loc = joinWindow(lines, idxFactoryName + 1, end).replaceAll("\\s{2,}", " ").trim();
+            if (blank(po.getFactoryLocation())) {
+                po.setFactoryLocation(loc);
+            }
+        }
+    }
+
+    private String safeNextNonEmpty(String[] lines, int startIdx) {
+        for (int i = startIdx; i < lines.length; i++) {
+            String s = lines[i].trim();
+            if (!s.isEmpty()) return s;
+        }
+            return "";
+        }
+
+    private String joinFollowing(String[] lines, int startIdx, int maxLines) {
+        StringBuilder sb = new StringBuilder();
+        for (int i = startIdx; i < Math.min(lines.length, startIdx + maxLines); i++) {
+            String s = lines[i].trim();
+            if (s.isEmpty()) break;
+            if (sb.length() > 0) sb.append(", ");
+            sb.append(s);
+        }
+        return sb.toString();
+    }
+
+    private String joinWindow(String[] lines, int from, int to) {
+        StringBuilder sb = new StringBuilder();
+        for (int i = from; i <= to && i < lines.length; i++) {
+            String s = lines[i].trim();
+            if (!s.isEmpty()) {
+                if (sb.length() > 0) sb.append(", ");
+                sb.append(s);
+            }
+        }
+        return sb.toString();
     }
 
     private String clean(String value) {

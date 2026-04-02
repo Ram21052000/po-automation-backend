@@ -11,6 +11,7 @@ Full-stack prototype to automate purchase order extraction from PDF files, store
 ## Features Implemented
 
 - PDF upload and extraction (`/api/po/upload`)
+- Folder ingestion (scan folders recursively for PDFs) (`/api/po/ingest-paths`)
 - Standardized PO fields:
   - Supplier, Brand, Buyer, Category, Style Number
   - Order Quantity, Unit Price, Total Amount, Currency
@@ -18,13 +19,16 @@ Full-stack prototype to automate purchase order extraction from PDF files, store
 - Parse validation with error capture (`parseStatus`, `parseErrors`)
 - Relational persistence in MySQL
 - Secure APIs via Basic Authentication
-- Filtered query endpoint (date range, supplier, buyer, category)
+- Filtered query endpoint (date range, country, supplier, brand, buyer, category, factoryName)
 - Insights endpoints:
   - Order count/value/quantity by supplier and brand
   - Delivery timeline
-- CSV export endpoint
-- USD->GBP conversion endpoint with live API + fallback cache
-- Frontend dashboard with upload, filters, KPI cards, insights chart, and PO table
+- XLSX export endpoint (template columns) + CSV export
+- Currency conversion endpoints with live API + fallback cache
+- Adjusted GBP→USD conversion (live rate minus 0.02 as per spec)
+- Analytics endpoints (Sep–Aug fiscal year): week/month/year summaries + dimension breakdowns
+- Chatbot API + React chatbot UI (text + voice)
+- Frontend dashboard with upload, folder ingest, filters, KPI cards, insights charts, analytics tables, and PO line item table
 
 ## Architecture
 
@@ -57,18 +61,31 @@ Full-stack prototype to automate purchase order extraction from PDF files, store
 - `GET /api/po/insights/supplier-brand`
 - `GET /api/po/insights/delivery-timeline`
 - `GET /api/po/currency/usd-to-gbp`
+- `GET /api/po/currency/gbp-to-usd-adjusted`
 - `GET /api/po/export`
+- `GET /api/po/export-xlsx`
+- `POST /api/po/ingest-paths`
+- `GET /api/po/analytics/country`
+- `GET /api/po/analytics/time?granularity=week|month|year` (Sep–Aug FY)
+- `GET /api/po/analytics/brand-links`
+- `GET /api/po/analytics/supplier-links`
+- `GET /api/po/analytics/factory-links`
+- `GET /api/po/analytics/overall-totals-usd`
+- `GET /api/po/analytics/suppliers`
+- `GET /api/po/analytics/factories`
+- `POST /api/chatbot/ask`
 - `GET /api/po/health` (public)
 
 ## Demo Flow
 
 1. Start backend and frontend.
-2. Upload a PO PDF.
-3. Validate parsed data in table.
-4. Apply filters.
-5. Review KPI cards and supplier-brand chart.
-6. Export records as CSV.
-7. Show live/fallback currency rate.
+2. Either upload a PO PDF OR ingest folders using the UI “Folder Ingestion” panel.
+3. Validate parsed line items.
+4. Apply filters (country/brand/supplier/factory/time period).
+5. Review KPI cards (includes total USD converted using adjusted GBP→USD live-0.02).
+6. Review analytics tables (country-wise + week/month/year summaries in Sep–Aug FY).
+7. Use chatbot (text or voice) to ask for insights.
+8. Export records as XLSX (template columns).
 
 ## Notes
 
