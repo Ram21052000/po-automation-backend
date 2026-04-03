@@ -2,11 +2,11 @@
 FROM eclipse-temurin:17-jdk AS builder
 WORKDIR /app
 
-COPY pom.xml ./
-COPY mvnw ./
-COPY .mvn .mvn
-
-COPY src ./src
+# Repo layout: Spring Boot app lives in ./po-automation
+COPY po-automation/pom.xml ./pom.xml
+COPY po-automation/mvnw ./mvnw
+COPY po-automation/.mvn ./.mvn
+COPY po-automation/src ./src
 
 RUN chmod +x ./mvnw && ./mvnw -q -DskipTests package
 
