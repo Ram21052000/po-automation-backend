@@ -317,4 +317,14 @@ public class PurchaseOrderService {
     private String asString(Object value) {
         return value == null ? "" : value.toString();
     }
+
+    @Transactional
+    public void deleteOne(Long id) {
+        repo.deleteById(id);
+    }
+
+    @Transactional
+    public void deleteAll() {
+        repo.deleteAll();
+    }
 }

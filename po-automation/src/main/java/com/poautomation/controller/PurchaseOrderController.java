@@ -97,6 +97,18 @@ public class PurchaseOrderController {
         return Map.of("status", "UP");
     }
 
+    @DeleteMapping("/{id}")
+    public Map<String, Object> deleteOne(@PathVariable Long id) {
+        service.deleteOne(id);
+        return Map.of("ok", true, "deletedId", id);
+    }
+
+    @DeleteMapping
+    public Map<String, Object> deleteAll() {
+        service.deleteAll();
+        return Map.of("ok", true, "message", "All POs deleted");
+    }
+
     // Analytics endpoints
     @GetMapping("/analytics/country")
     public Map<String, Object> countryTotals() {
